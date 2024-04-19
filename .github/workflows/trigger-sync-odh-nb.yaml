@@ -1,0 +1,27 @@
+name: Triger sync odh notebook
+on:
+  workflow_dispatch:
+    inputs:
+        release-version:
+            type: string
+            required: true
+            description: 'Version number (for example: 0.1.0)'
+        codeflare-repository-organization:
+            type: string
+            default: "project-codeflare"
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Sync ODH Notebooks
+              run: |
+                gh workflow run odh-notebooks-sync.yml \
+                  --repo ${{ github.event.inputs.codeflare-repository-organization }}/codeflare-sdk \
+                  --ref ${{ github.ref }} \
+                  --field upstream-repository-organization=abhijeet-dhumal
+                  --field codeflare-repository-organization=${{ github.event.inputs.codeflare-repository-organization }} \
+                  --field codeflare-sdk-release-version=${{ github.event.inputs.release-version }}
+              env:
+                GITHUB_TOKEN: ${{ secrets.CODEFLARE_MACHINE_ACCOUNT_TOKEN }}
+              shell: bash

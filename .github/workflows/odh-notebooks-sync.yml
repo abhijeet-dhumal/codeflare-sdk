@@ -13,13 +13,14 @@ on:
         description: "Owner of origin notebooks repository used to open a PR"
         default: "project-codeflare"
 
-      codeflare_sdk_release_version:
+      codeflare-sdk-release-version:
+        type: string
         required: true
         description: "Provide version of the Codeflare-SDK release"
 
 env:
   BRANCH_NAME: main
-  CODEFLARE_RELEASE_VERSION: ${{ github.event.inputs.codeflare_sdk_release_version }}
+  CODEFLARE_RELEASE_VERSION: ${{ github.event.inputs.codeflare-sdk-release-version }}
   UPDATER_BRANCH: odh-sync-updater-${{ github.run_id }}
   UPSTREAM_OWNER: ${{ github.event.inputs.upstream-repository-organization }}
   REPO_OWNER: ${{ github.event.inputs.codeflare-repository-organization }}
