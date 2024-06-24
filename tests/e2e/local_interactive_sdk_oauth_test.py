@@ -17,9 +17,17 @@ class TestRayLocalInteractiveOauth:
     def setup_method(self):
         initialize_kubernetes_client(self)
 
+        # to deploy minio storage instance
+        # yaml_file_path= os.path.join(dir_path, "minio_deployment.yaml")
+        # yaml_deployment(yaml_file_path,"apply")
+
     def teardown_method(self):
         delete_namespace(self)
         delete_kueue_resources(self)
+
+        # to delete deployment created using minio yaml file
+        # yaml_file_path= os.path.join(dir_path, "minio_deployment.yaml")
+        # yaml_deployment(yaml_file_path,"delete")
 
     def test_local_interactives(self):
         self.setup_method()

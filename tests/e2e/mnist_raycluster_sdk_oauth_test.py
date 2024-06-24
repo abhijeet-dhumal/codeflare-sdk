@@ -17,9 +17,17 @@ class TestRayClusterSDKOauth:
     def setup_method(self):
         initialize_kubernetes_client(self)
 
+        # to deploy minio storage instance
+        # yaml_file_path= os.path.join(dir_path, "minio_deployment.yaml")
+        # yaml_deployment(yaml_file_path,"apply")
+
     def teardown_method(self):
         delete_namespace(self)
         delete_kueue_resources(self)
+
+        # to delete deployment created using minio yaml file
+        # yaml_file_path= os.path.join(dir_path, "minio_deployment.yaml")
+        # yaml_deployment(yaml_file_path,"delete")
 
     def test_mnist_ray_cluster_sdk_auth(self):
         self.setup_method()
@@ -72,11 +80,13 @@ class TestRayClusterSDKOauth:
 
     def assert_jobsubmit_withoutLogin(self, cluster):
         dashboard_url = cluster.cluster_dashboard_uri()
+
         jobdata = {
             "entrypoint": "python mnist.py",
             "runtime_env": {
                 "working_dir": "./tests/e2e/",
                 "pip": "./tests/e2e/mnist_pip_requirements.txt",
+                "env_vars": get_disconnected_setup_env_variables(),
             },
         }
         try:
@@ -104,8 +114,10 @@ class TestRayClusterSDKOauth:
             runtime_env={
                 "working_dir": "./tests/e2e/",
                 "pip": "./tests/e2e/mnist_pip_requirements.txt",
+                "env_vars": get_disconnected_setup_env_variables(),
             },
         )
+
         print(f"Submitted job with ID: {submission_id}")
         done = False
         time = 0

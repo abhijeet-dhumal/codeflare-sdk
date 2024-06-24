@@ -1,15 +1,34 @@
 import os
 import random
-import string
+import string, yaml
 import subprocess
 from kubernetes import client, config
-import kubernetes.client
-from codeflare_sdk.utils.kube_api_helpers import _kube_api_error_handling
+from kubernetes.client.exceptions import ApiException
+from minio import Minio
+
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
 
 
 def get_ray_image():
     default_ray_image = "quay.io/rhoai/ray:2.23.0-py39-cu121"
     return os.getenv("RAY_IMAGE", default_ray_image)
+
+
+def get_disconnected_setup_env_variables():
+    env_vars = dict()
+    # Use specified pip index url instead of default(https://pypi.org/simple) if related environment variables exists
+    if "PIP_INDEX_URL" in os.environ:
+        env_vars["PIP_INDEX_URL"] = os.environ.get("PIP_INDEX_URL")
+        env_vars["PIP_TRUSTED_HOST"] = os.environ.get("PIP_TRUSTED_HOST")
+
+    # Use specified storage bucket to download datasets from
+    if "AWS_DEFAULT_ENDPOINT" in os.environ:
+        env_vars["AWS_DEFAULT_ENDPOINT"] = os.environ.get("AWS_DEFAULT_ENDPOINT")
+        env_vars["AWS_ACCESS_KEY_ID"] = os.environ.get("AWS_ACCESS_KEY_ID")
+        env_vars["AWS_SECRET_ACCESS_KEY"] = os.environ.get("AWS_SECRET_ACCESS_KEY")
+        env_vars["AWS_STORAGE_BUCKET"] = os.environ.get("AWS_STORAGE_BUCKET")
+    return env_vars
 
 
 def random_choice():
@@ -48,7 +67,7 @@ def create_namespace_with_name(self, namespace_name):
         )
         self.api_instance.create_namespace(namespace_body)
     except Exception as e:
-        return _kube_api_error_handling(e)
+        raise RuntimeError(e)
 
 
 def delete_namespace(self):
@@ -60,7 +79,7 @@ def initialize_kubernetes_client(self):
     config.load_kube_config()
     # Initialize Kubernetes client
     self.api_instance = client.CoreV1Api()
-    self.custom_api = kubernetes.client.CustomObjectsApi(self.api_instance.api_client)
+    self.custom_api = client.CustomObjectsApi(self.api_instance.api_client)
 
 
 def run_oc_command(args):
@@ -217,3 +236,138 @@ def delete_kueue_resources(self):
         print(f"'{self.resource_flavor}' resource-flavor deleted")
     except Exception as e:
         print(f"\nError deleting resource-flavor '{self.resource_flavor}' : {e}")
+
+
+def download_all_from_storage_bucket(
+    endpoint, access_key, secret_key, bucket_name, dir_path=dir_path
+):
+    client = Minio(
+        endpoint, access_key=access_key, secret_key=secret_key, cert_check=False
+    )
+
+    # for bucket in client.list_buckets():
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+    else:
+        print(f"Directory '{dir_path}' already exists")
+    # download all files from storage bucket recursively
+    for item in client.list_objects(bucket_name, recursive=True):
+        dataset_file_path = os.path.join(dir_path, item.object_name)
+        if not os.path.exists(dataset_file_path):
+            client.fget_object(bucket_name, item.object_name, dataset_file_path)
+        else:
+            print(f"File-path '{dataset_file_path}' already exists")
+
+
+# For example : Can be used for minio storage instance deployment using minio-deployment.yaml file
+def apply_yaml_deployment(yaml_file_path):
+    # Load the OpenShift/Kubernetes configuration
+    config.load_kube_config()
+
+    with open(yaml_file_path, "r") as file:
+        yaml_data = yaml.safe_load_all(file)
+
+        k8s_client = client.ApiClient()
+        for data in yaml_data:
+            try:
+                kind = data["kind"]
+                namespace = data["metadata"].get("namespace", "default")
+
+                # Apply the resource based on its kind
+                if kind == "Deployment":
+                    apps_v1_api = client.AppsV1Api(k8s_client)
+                    apps_v1_api.create_namespaced_deployment(
+                        namespace=namespace, body=data
+                    )
+                elif kind == "Service":
+                    core_v1_api = client.CoreV1Api(k8s_client)
+                    core_v1_api.create_namespaced_service(
+                        namespace=namespace, body=data
+                    )
+                elif kind == "PersistentVolumeClaim":
+                    core_v1_api = client.CoreV1Api(k8s_client)
+                    core_v1_api.create_namespaced_persistent_volume_claim(
+                        namespace=namespace, body=data
+                    )
+                elif kind == "Secret":
+                    core_v1_api = client.CoreV1Api(k8s_client)
+                    core_v1_api.create_namespaced_secret(namespace=namespace, body=data)
+                elif kind == "ConfigMap":
+                    core_v1_api = client.CoreV1Api(k8s_client)
+                    core_v1_api.create_namespaced_config_map(
+                        namespace=namespace, body=data
+                    )
+                elif kind == "Route":
+                    # OpenShift-specific Route creation
+                    route_v1_api = client.CustomObjectsApi(k8s_client)
+                    group = "route.openshift.io"
+                    version = "v1"
+                    plural = "routes"
+                    route_v1_api.create_namespaced_custom_object(
+                        group=group,
+                        version=version,
+                        namespace=namespace,
+                        plural=plural,
+                        body=data,
+                    )
+                else:
+                    print(f"Unsupported resource kind: {kind}")
+            except ApiException as e:
+                print(f"Exception when creating resource {kind}: {e}\n")
+
+
+def delete_yaml_deployment(yaml_file_path):
+    # Load the OpenShift/Kubernetes configuration
+    config.load_kube_config()
+
+    with open(yaml_file_path, "r") as file:
+        yaml_data = yaml.safe_load_all(file)
+
+        k8s_client = client.ApiClient()
+        for data in yaml_data:
+            try:
+                kind = data["kind"]
+                name = data["metadata"]["name"]
+                namespace = data["metadata"].get("namespace", "default")
+
+                # Delete the resource based on its kind
+                if kind == "Deployment":
+                    apps_v1_api = client.AppsV1Api(k8s_client)
+                    apps_v1_api.delete_namespaced_deployment(
+                        name=name, namespace=namespace
+                    )
+                elif kind == "Service":
+                    core_v1_api = client.CoreV1Api(k8s_client)
+                    core_v1_api.delete_namespaced_service(
+                        name=name, namespace=namespace
+                    )
+                elif kind == "PersistentVolumeClaim":
+                    core_v1_api = client.CoreV1Api(k8s_client)
+                    core_v1_api.delete_namespaced_persistent_volume_claim(
+                        name=name, namespace=namespace
+                    )
+                elif kind == "Secret":
+                    core_v1_api = client.CoreV1Api(k8s_client)
+                    core_v1_api.delete_namespaced_secret(name=name, namespace=namespace)
+                elif kind == "ConfigMap":
+                    core_v1_api = client.CoreV1Api(k8s_client)
+                    core_v1_api.delete_namespaced_config_map(
+                        name=name, namespace=namespace
+                    )
+                elif kind == "Route":
+                    # OpenShift-specific Route deletion
+                    route_v1_api = client.CustomObjectsApi(k8s_client)
+                    group = "route.openshift.io"
+                    version = "v1"
+                    plural = "routes"
+                    route_v1_api.delete_namespaced_custom_object(
+                        group=group,
+                        version=version,
+                        namespace=namespace,
+                        plural=plural,
+                        name=name,
+                    )
+                else:
+                    print(f"Unsupported resource kind: {kind}")
+            except ApiException as e:
+                print(f"Exception when deleting resource {kind}: {e}\n")

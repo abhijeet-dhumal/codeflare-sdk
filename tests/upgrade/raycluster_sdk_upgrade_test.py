@@ -30,6 +30,10 @@ class TestMNISTRayClusterUp:
             delete_kueue_resources(self)
             return _kube_api_error_handling(e)
 
+        # to deploy minio storage instance (dir_path - /tests/e2e/)
+        # yaml_file_path= os.path.join(dir_path, "minio_deployment.yaml")
+        # yaml_deployment(yaml_file_path,"apply")
+
     def test_mnist_ray_cluster_sdk_auth(self):
         self.run_mnist_raycluster_sdk_oauth()
 
@@ -122,6 +126,7 @@ class TestMnistJobSubmit:
             runtime_env={
                 "working_dir": "./tests/e2e/",
                 "pip": "./tests/e2e/mnist_pip_requirements.txt",
+                "env_vars": get_disconnected_setup_env_variables(),
             },
         )
         print(f"Submitted job with ID: {submission_id}")
