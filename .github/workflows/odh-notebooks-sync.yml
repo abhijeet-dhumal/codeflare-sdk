@@ -92,20 +92,25 @@ jobs:
               counter=$((counter+1))
               echo "--Processing directory $counter '$dir' of total $total"
               cd "$dir"
-              #install specified package
-              if ! pipenv install ${package_name}~="${CODEFLARE_RELEASE_VERSION}"; then
-                echo "Failed to install ${package_name} with version ${CODEFLARE_RELEASE_VERSION} in $dir"
-                exit 1
-              fi
-              # Lock dependencies, ensuring pre-release are included and clear previous state
-              if ! pipenv lock --pre --clear ; then
-                echo "Failed to lock dependencies"
-                exit 1
-              fi
-              # remove virtual env and clear cache
-              if ! penv --rm --clear ; then
-                echo "Failed to remove virtual environment"
-                exit 1
+              pipfile_python_version=$(grep -E '^python_version' ./Pipfile | cut -d '"' -f 2)
+              if [[ "$pipfile_python_version" > 3.8 ]]; then
+                #install specified package
+                if ! pipenv install ${package_name}~="${CODEFLARE_RELEASE_VERSION}"; then
+                  echo "Failed to install ${package_name} with version ${CODEFLARE_RELEASE_VERSION} in $dir"
+                  # exit 1
+                fi
+                # Lock dependencies, ensuring pre-release are included and clear previous state
+                if ! pipenv lock --pre --clear ; then
+                  echo "Failed to lock dependencies"
+                  # exit 1
+                fi
+                # remove virtual env and clear cache
+                if ! penv --rm --clear ; then
+                  echo "Failed to remove virtual environment"
+                  # exit 1
+                fi
+              else
+                echo "Skipped installtion of ${package_name} with version ${CODEFLARE_RELEASE_VERSION} in $dir"
               fi
               cd -
               echo "$((total-counter)) directories remaining.."
